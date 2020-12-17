@@ -1,6 +1,7 @@
 #include <LiquidCrystal.h>
 #include <HID.h>
 #include <BMDSDIControl.h>
+#include <SoftwareSerial.h>
 
 LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 
@@ -21,16 +22,32 @@ int navLevel = 0;
 boolean backReady = true;
 boolean goReady = true;
 
-char cameraFunctions[][14] = {"video mode   ",
+int incomingModeByte = 0;
+int incomingValByte = 0;
+int incomingBreakByte = 0;
+
+char cameraFunctions[][14] = {"camera       ",
+                              "video mode   ",
                               "sensor gain  ",
                               "white balance",
                               "shutter speed",
                               "aperture     ",
                               "focus        ",
                               "zoom         "};
+const int FUNC_CAMERA = 0;
+const int FUNC_MODE = 1;
+const int FUNC_GAIN = 2;
+const int FUNC_TEMP = 3;
+const int FUNC_SHUTTER = 4;
+const int FUNC_APERTURE = 5;
+const int FUNC_FOCUS = 6;
+const int FUNC_ZOOM = 7;
+
 int cameraFunctionIndex = 0;
 
-char videoModes[][12] = {"1080i50   ", "1080i59.94", "1080i60   ",
+int cameraNum = 2;
+
+char videoModes[][12] = {"720p50    ", "720p59.94 ", "720p60    ", "1080i25   ", "1080i29.97", "1080i30   ",
                          "1080p23.98", "1080p24   ", "1080p25   ", "1080p29.97", "1080p30   ", "1080p50   ", "1080p59.94", "1080p60   ",
                          "2160p23.98", "2160p24   ", "2160p25   ", "2160p29.97", "2160p30   "};
 int videoModeIndex = 9;
@@ -48,10 +65,8 @@ int shutterSpeedIndex = 1;
 float fStops[] = {1.0, 1.2, 1.4, 1.7, 2.0, 2.4, 2.8, 3.3, 4.0, 4.8, 5.6, 6.7, 8.0, 9.5, 11.0, 13.0, 16.0};
 int fStopIndex = 10;
 
-float focus = 0.5;
+float focus = 0.7;
 short zoom = 25;
-
-byte cameraByte = 0x01;
 
 void updateLcd() {
   switch (navLevel) {
@@ -67,39 +82,46 @@ void updateLcd() {
       lcd.print(cameraFunctions[cameraFunctionIndex]);
       lcd.setCursor(0, 1);
       switch(cameraFunctionIndex) {
-        case 0:
+        case FUNC_CAMERA:
+          lcd.print("      ");
+          if (cameraNum < 10) lcd.print(" ");
+          if (cameraNum < 100) lcd.print(" ");
+          lcd.print(cameraNum);
+          lcd.print("      ");
+          break;
+        case FUNC_MODE:
           lcd.print("    ");
           lcd.print(videoModes[videoModeIndex]);
           lcd.print("    ");
           break;
-        case 1:
+        case FUNC_GAIN:
           lcd.print("    ISO ");
           lcd.print(isoOptions[sensorGainIndex]);
           lcd.print("    ");
           break;
-        case 2:
+        case FUNC_TEMP:
           lcd.print("      ");
           lcd.print(whiteBalances[whiteBalanceIndex]);
           lcd.print("      ");
           break;
-        case 3:
+        case FUNC_SHUTTER:
           lcd.print("      ");
           if (shutterSpeedIndex < 4) lcd.print(" ");
           if (shutterSpeedIndex < 12) lcd.print(" ");
           lcd.print(shutterSpeeds[shutterSpeedIndex]);
           lcd.print("      ");
           break;
-        case 4:
+        case FUNC_APERTURE:
           lcd.print("     f/");
           lcd.print(fStops[fStopIndex]);
           lcd.print("     ");
           break;
-        case 5:
+        case FUNC_FOCUS:
           lcd.print("      ");
           lcd.print(focus);
           lcd.print("      ");
           break;
-        case 6:
+        case FUNC_ZOOM:
           lcd.print("      ");
           if (zoom < 10) lcd.print(" ");
           if (zoom < 100) lcd.print(" ");
@@ -125,7 +147,14 @@ void clockwise() {
       break;
     case 1:
       switch(cameraFunctionIndex) {
-        case 0:
+        case FUNC_CAMERA:
+          if (cameraNum >= 99) {
+            cameraNum = 100;
+          } else {
+            cameraNum += 1;
+          }
+          break;
+        case FUNC_MODE:
           switch(videoModeIndex) {
             case 15:
               videoModeIndex = 0;
@@ -136,7 +165,7 @@ void clockwise() {
           }
           writeVideoMode();
           break;
-        case 1:
+        case FUNC_GAIN:
           switch(sensorGainIndex) {
             case 4:
               sensorGainIndex = 0;
@@ -147,7 +176,7 @@ void clockwise() {
           }
           writeSensorGain();
           break;
-        case 2:
+        case FUNC_TEMP:
           switch(whiteBalanceIndex) {
             case 17:
               whiteBalanceIndex = 0;
@@ -158,7 +187,7 @@ void clockwise() {
           }
           writeWhiteBalance();
           break;
-        case 3:
+        case FUNC_SHUTTER:
           switch(shutterSpeedIndex) {
             case 14:
               shutterSpeedIndex = 0;
@@ -169,7 +198,7 @@ void clockwise() {
           }
           writeShutterSpeed();
           break;
-        case 4:
+        case FUNC_APERTURE:
           switch(fStopIndex) {
             case 16:
               fStopIndex = 0;
@@ -180,7 +209,7 @@ void clockwise() {
           }
           writeAperture();
           break;
-        case 5:
+        case FUNC_FOCUS:
           if (focus >= 0.99) {
             focus = 1.0;
           } else {
@@ -188,7 +217,7 @@ void clockwise() {
           }
           writeFocus();
           break;
-        case 6:
+        case FUNC_ZOOM:
           if (zoom >= 199) {
             zoom = 200;
           } else {
@@ -215,7 +244,14 @@ void counterClockwise() {
       break;
     case 1:
       switch(cameraFunctionIndex) {
-        case 0:
+        case FUNC_CAMERA:
+          if (cameraNum <= 2) {
+            cameraNum = 1;
+          } else {
+            cameraNum -= 1;
+          }
+          break;
+        case FUNC_MODE:
           switch(videoModeIndex) {
             case 0:
               videoModeIndex = 15;
@@ -226,7 +262,7 @@ void counterClockwise() {
           }
           writeVideoMode();
           break;
-        case 1:
+        case FUNC_GAIN:
           switch(sensorGainIndex) {
             case 0:
               sensorGainIndex = 4;
@@ -237,7 +273,7 @@ void counterClockwise() {
           }
           writeSensorGain();
           break;
-        case 2:
+        case FUNC_TEMP:
           switch(whiteBalanceIndex) {
             case 0:
               whiteBalanceIndex = 17;
@@ -248,7 +284,7 @@ void counterClockwise() {
           }
           writeWhiteBalance();
           break;
-        case 3:
+        case FUNC_SHUTTER:
           switch(shutterSpeedIndex) {
             case 0:
               shutterSpeedIndex = 14;
@@ -259,7 +295,7 @@ void counterClockwise() {
           }
           writeShutterSpeed();
           break;
-        case 4:
+        case FUNC_APERTURE:
           switch(fStopIndex) {
             case 0:
               fStopIndex = 16;
@@ -270,7 +306,7 @@ void counterClockwise() {
           }
           writeAperture();
           break;
-        case 5:
+        case FUNC_FOCUS:
           if (focus <= 0.01) {
             focus = 0.0;
           } else {
@@ -278,7 +314,7 @@ void counterClockwise() {
           }
           writeFocus();
           break;
-        case 6:
+        case FUNC_ZOOM:
           if (zoom <= 9) {
             zoom = 8;
           } else {
@@ -322,101 +358,119 @@ float zoomConverted() {
 }
 
 void writeVideoMode() {
-  byte modeBytes[13] = {0x01, 0x09, 0x00, 0x00,
+  byte modeBytes[13] = {lowByte(cameraNum), 0x09, 0x00, 0x00,
                         0x01, 0x00, 0x01, 0x00,
                         0x1E, 0x00, 0x03, 0x00, 0x00};
   switch (videoModeIndex) {
     case 0:
       modeBytes[8] = 0x32;
       modeBytes[9] = 0x00;
-      modeBytes[10] = 0x03;
-      modeBytes[11] = 0x01;
+      modeBytes[10] = 0x02;
+      modeBytes[11] = 0x00;
       break;
     case 1:
       modeBytes[8] = 0x3C;
       modeBytes[9] = 0x01;
-      modeBytes[10] = 0x03;
-      modeBytes[11] = 0x01;
+      modeBytes[10] = 0x02;
+      modeBytes[11] = 0x00;
       break;
     case 2:
       modeBytes[8] = 0x3C;
       modeBytes[9] = 0x00;
-      modeBytes[10] = 0x03;
-      modeBytes[11] = 0x01;
+      modeBytes[10] = 0x02;
+      modeBytes[11] = 0x00;
       break;
     case 3:
-      modeBytes[8] = 0x18;
-      modeBytes[9] = 0x01;
-      modeBytes[10] = 0x03;
-      modeBytes[11] = 0x00;
-      break;
-    case 4:
-      modeBytes[8] = 0x18;
-      modeBytes[9] = 0x00;
-      modeBytes[10] = 0x03;
-      modeBytes[11] = 0x00;
-      break;
-    case 5:
       modeBytes[8] = 0x19;
       modeBytes[9] = 0x00;
       modeBytes[10] = 0x03;
-      modeBytes[11] = 0x00;
+      modeBytes[11] = 0x01;
+      break;
+    case 4:
+      modeBytes[8] = 0x1E;
+      modeBytes[9] = 0x01;
+      modeBytes[10] = 0x03;
+      modeBytes[11] = 0x01;
+      break;
+    case 5:
+      modeBytes[8] = 0x1E;
+      modeBytes[9] = 0x00;
+      modeBytes[10] = 0x03;
+      modeBytes[11] = 0x01;
       break;
     case 6:
-      modeBytes[8] = 0x1E;
+      modeBytes[8] = 0x18;
       modeBytes[9] = 0x01;
       modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 7:
-      modeBytes[8] = 0x1E;
+      modeBytes[8] = 0x18;
       modeBytes[9] = 0x00;
       modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 8:
-      modeBytes[8] = 0x32;
+      modeBytes[8] = 0x19;
       modeBytes[9] = 0x00;
       modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 9:
-      modeBytes[8] = 0x3C;
+      modeBytes[8] = 0x1E;
       modeBytes[9] = 0x01;
       modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 10:
-      modeBytes[8] = 0x3C;
+      modeBytes[8] = 0x1E;
       modeBytes[9] = 0x00;
       modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 11:
-      modeBytes[8] = 0x18;
-      modeBytes[9] = 0x01;
-      modeBytes[10] = 0x06;
+      modeBytes[8] = 0x32;
+      modeBytes[9] = 0x00;
+      modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 12:
-      modeBytes[8] = 0x18;
-      modeBytes[9] = 0x00;
-      modeBytes[10] = 0x06;
+      modeBytes[8] = 0x3C;
+      modeBytes[9] = 0x01;
+      modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 13:
-      modeBytes[8] = 0x19;
+      modeBytes[8] = 0x3C;
       modeBytes[9] = 0x00;
-      modeBytes[10] = 0x06;
+      modeBytes[10] = 0x03;
       modeBytes[11] = 0x00;
       break;
     case 14:
-      modeBytes[8] = 0x1E;
+      modeBytes[8] = 0x18;
       modeBytes[9] = 0x01;
       modeBytes[10] = 0x06;
       modeBytes[11] = 0x00;
       break;
     case 15:
+      modeBytes[8] = 0x18;
+      modeBytes[9] = 0x00;
+      modeBytes[10] = 0x06;
+      modeBytes[11] = 0x00;
+      break;
+    case 16:
+      modeBytes[8] = 0x19;
+      modeBytes[9] = 0x00;
+      modeBytes[10] = 0x06;
+      modeBytes[11] = 0x00;
+      break;
+    case 17:
+      modeBytes[8] = 0x1E;
+      modeBytes[9] = 0x01;
+      modeBytes[10] = 0x06;
+      modeBytes[11] = 0x00;
+      break;
+    case 18:
       modeBytes[8] = 0x1E;
       modeBytes[9] = 0x00;
       modeBytes[10] = 0x06;
@@ -427,49 +481,83 @@ void writeVideoMode() {
 }
 
 void writeSensorGain() {
-  sdiCameraControl.writeCommandInt8(cameraByte, 0x01, 0x01, 0x00, sensorGains[sensorGainIndex]);
+  sdiCameraControl.writeCommandInt8(cameraNum, 0x01, 0x01, 0x00, sensorGains[sensorGainIndex]);
 }
 
 void writeWhiteBalance() {
-  sdiCameraControl.writeCommandInt16(cameraByte, 0x01, 0x02, 0x00, whiteBalances[whiteBalanceIndex]);
+  sdiCameraControl.writeCommandInt16(cameraNum, 0x01, 0x02, 0x00, whiteBalances[whiteBalanceIndex]);
 }
 
 void writeShutterSpeed() {
-  sdiCameraControl.writeCommandInt32(cameraByte, 0x01, 0x05, 0x00, shutterUs());
+  sdiCameraControl.writeCommandInt32(cameraNum, 0x01, 0x05, 0x00, shutterUs());
 }
 
 void writeAperture() {
-  sdiCameraControl.writeCommandFixed16(cameraByte, 0x00, 0x02, 0x00, fStopConverted());
+  sdiCameraControl.writeCommandFixed16(cameraNum, 0x00, 0x02, 0x00, fStopConverted());
 }
 
 void writeFocus() {
-  sdiCameraControl.writeCommandFixed16(cameraByte, 0x00, 0x00, 0x00, focus);
+  sdiCameraControl.writeCommandFixed16(cameraNum, 0x00, 0x00, 0x00, focus);
 }
 
 void writeZoom() {
-  sdiCameraControl.writeCommandInt16(cameraByte, 0x00, 0x07, 0x00, zoom);
-}
-
-void writeBlackmagic() {
-//  sdiCameraControl.writeCommandInt8(cameraByte, 0x01, 0x01, 0x00, sensorGains[sensorGainIndex]);
-  // white balance
-//  sdiCameraControl.writeCommandInt16(cameraByte, 0x01, 0x02, 0x00, whiteBalances[whiteBalanceIndex]);
-  // shutter
-//  sdiCameraControl.writeCommandInt32(cameraByte, 0x01, 0x05, 0x00, shutterUs());
-  //aperture
-  sdiCameraControl.writeCommandFixed16(cameraByte, 0x00, 0x02, 0x00, fStopConverted());
-  // focus
-  sdiCameraControl.writeCommandFixed16(cameraByte, 0x00, 0x00, 0x00, focus);
-  // zoom
-  sdiCameraControl.writeCommandInt16(cameraByte, 0x00, 0x07, 0x00, zoom);
+  sdiCameraControl.writeCommandInt16(cameraNum, 0x00, 0x07, 0x00, zoom);
 }
 
 void refresh() {
   updateLcd();
-//  writeBlackmagic();
+}
+
+void handleSerialData() {
+  incomingModeByte = Serial.read();
+  if (incomingModeByte == 255) {
+    return;
+  }
+  incomingValByte = Serial.read();
+  if (incomingValByte == 255) {
+    return;
+  }
+  incomingBreakByte = Serial.read();
+  if (incomingBreakByte != 255) {
+    return;
+  }
+  switch (incomingModeByte) {
+    case FUNC_CAMERA:
+      cameraNum = incomingValByte;
+      break;
+    case FUNC_MODE:
+      videoModeIndex = incomingValByte;
+      writeVideoMode();
+      break;
+    case FUNC_GAIN:
+      sensorGainIndex = incomingValByte;
+      writeSensorGain();
+      break;
+    case FUNC_TEMP:
+      whiteBalanceIndex = incomingValByte;
+      writeWhiteBalance();
+      break;
+    case FUNC_SHUTTER:
+      shutterSpeedIndex = incomingValByte;
+      writeShutterSpeed();
+      break;
+    case FUNC_APERTURE:
+      fStopIndex = incomingValByte;
+      writeAperture();
+      break;
+    case FUNC_FOCUS:
+      focus = float(incomingValByte) / 100.0;
+      writeFocus();
+      break;
+    case FUNC_ZOOM:
+      zoom = incomingValByte;
+      writeZoom();
+      break;
+  }
 }
 
 void setup() {
+  Serial.begin(9600);
   lcd.begin(16, 2);
   lcd.print("               >");
   
@@ -482,6 +570,7 @@ void setup() {
   sdiCameraControl.setOverride(true);
 
   refresh();
+  writeFocus();
 }
 
 void loop() {
@@ -522,5 +611,8 @@ void loop() {
   } else {
     goReady = true;
   }
-}
 
+  if (Serial.available() > 2) {
+    handleSerialData();
+  }
+}
