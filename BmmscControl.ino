@@ -33,7 +33,9 @@ char cameraFunctions[][14] = {"camera       ",
                               "shutter speed",
                               "aperture     ",
                               "focus        ",
-                              "zoom         "};
+                              "zoom         ",
+                              "overlays     ",
+                              "zebras       "};
 const int FUNC_CAMERA = 0;
 const int FUNC_MODE = 1;
 const int FUNC_GAIN = 2;
@@ -42,6 +44,8 @@ const int FUNC_SHUTTER = 4;
 const int FUNC_APERTURE = 5;
 const int FUNC_FOCUS = 6;
 const int FUNC_ZOOM = 7;
+const int FUNC_OVERLAYS = 8;
+const int FUNC_ZEBRAS = 9;
 
 int cameraFunctionIndex = 0;
 
@@ -67,6 +71,9 @@ int fStopIndex = 10;
 
 float focus = 0.7;
 short zoom = 25;
+
+bool overlays = true;
+bool zebras = true;
 
 void updateLcd() {
   switch (navLevel) {
@@ -128,6 +135,24 @@ void updateLcd() {
           lcd.print(zoom);
           lcd.print("      ");
           break;
+        case FUNC_OVERLAYS:
+          lcd.print("      ");
+          if (overlays) {
+            lcd.print(" on");
+          } else {
+            lcd.print("off");
+          }
+          lcd.print("      ");
+          break;
+        case FUNC_ZEBRAS:
+          lcd.print("      ");
+          if (zebras) {
+            lcd.print(" on");
+          } else {
+            lcd.print("off");
+          }
+          lcd.print("      ");
+          break;
       }
       break;
   }
@@ -137,7 +162,7 @@ void clockwise() {
   switch (navLevel) {
     case 0:
       switch(cameraFunctionIndex) {
-        case 6:
+        case 9:
           cameraFunctionIndex = 0;
           break;
         default:
@@ -225,6 +250,14 @@ void clockwise() {
           }
           writeZoom();
           break;
+        case FUNC_OVERLAYS:
+          overlays = !overlays;
+          writeOverlays();
+          break;
+        case FUNC_ZEBRAS:
+          zebras = !zebras;
+          writeZebras();
+          break;
       }
       break;
   }
@@ -235,7 +268,7 @@ void counterClockwise() {
     case 0:
       switch(cameraFunctionIndex) {
         case 0:
-          cameraFunctionIndex = 6;
+          cameraFunctionIndex = 9;
           break;
         default:
           cameraFunctionIndex -= 1;
@@ -321,6 +354,14 @@ void counterClockwise() {
             zoom -= 1;
           }
           writeZoom();
+          break;
+        case FUNC_OVERLAYS:
+          overlays = !overlays;
+          writeOverlays();
+          break;
+        case FUNC_ZEBRAS:
+          zebras = !zebras;
+          writeZebras();
           break;
       }
       break;
@@ -504,6 +545,14 @@ void writeZoom() {
   sdiCameraControl.writeCommandInt16(cameraNum, 0x00, 0x07, 0x00, zoom);
 }
 
+void writeOverlays() {
+  sdiCameraControl.writeCommandInt16(cameraNum, 0x03, 0x00, 0x00, overlays ? 65535 : 0);
+}
+
+void writeZebras() {
+  sdiCameraControl.writeCommandInt16(cameraNum, 0x04, 0x01, 0x00, zebras ? 65535 : 0);
+}
+
 void refresh() {
   updateLcd();
 }
@@ -552,6 +601,14 @@ void handleSerialData() {
     case FUNC_ZOOM:
       zoom = incomingValByte;
       writeZoom();
+      break;
+    case FUNC_OVERLAYS:
+      overlays = incomingValByte == 1 ? true : false;
+      writeOverlays();
+      break;
+    case FUNC_ZEBRAS:
+      zebras = incomingValByte == 1 ? true : false;
+      writeZebras();
       break;
   }
 }
